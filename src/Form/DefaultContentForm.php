@@ -146,6 +146,12 @@ class DefaultContentForm extends FormBase {
       '#type' => 'textfield',
       '#default_value' => $entity_type_ids,
     ];
+    $form['export'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Export default content'),
+      '#button_type' => 'primary',
+      '#submit' => ['::exportSubmit'],
+    ];
 
     $form['zip'] = [
       '#title' => $this->t('Zip archive'),
@@ -154,15 +160,7 @@ class DefaultContentForm extends FormBase {
         'file_validate_extensions' => ['zip'],
       ],
     ];
-
-    $form['actions'] = ['#type' => 'actions'];
-    $form['actions']['export'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Export default content'),
-      '#button_type' => 'primary',
-      '#submit' => ['::exportSubmit'],
-    ];
-    $form['actions']['import'] = [
+    $form['import'] = [
       '#type' => 'submit',
       '#value' => $this->t('Import default content'),
       '#button_type' => 'primary',
