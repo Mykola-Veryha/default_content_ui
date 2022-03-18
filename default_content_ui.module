@@ -1,0 +1,25 @@
+<?php
+
+/**
+ * @file
+ * Default content UI module.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+
+/**
+ * Implements hook_entity_presave().
+ */
+function default_content_ui_entity_presave(EntityInterface $entity) {
+  if (isset($entity->default_content) && $entity->default_content) {
+    $storage = Drupal::entityTypeManager()->getStorage($entity->getEntityTypeId());
+    $exist_entities = $storage->loadByProperties([
+      'uuid' => $entity->uuid(),
+    ]);
+    $exist_entity = reset($exist_entities);
+    if ($exist_entity instanceof EntityInterface) {
+      // Delete previous entity.
+      $exist_entity->delete();
+    }
+  }
+}

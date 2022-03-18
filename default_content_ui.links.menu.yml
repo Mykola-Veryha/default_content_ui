@@ -1,0 +1,4 @@
+default_content_ui.form:
+  title: 'Default content'
+  route_name: default_content_ui.form
+  parent: system.admin_content

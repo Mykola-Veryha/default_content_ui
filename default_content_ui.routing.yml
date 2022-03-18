@@ -1,0 +1,7 @@
+default_content_ui.form:
+  path: '/admin/content/default-content'
+  defaults:
+    _form: 'Drupal\default_content_ui\Form\DefaultContentForm'
+    _title: 'Default content'
+  requirements:
+    _access: 'TRUE'
