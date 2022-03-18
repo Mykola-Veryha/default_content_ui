@@ -1,7 +1,9 @@
 # default_content_ui
 
-To enable rewriting exist entities 
+To enable rewriting exist entities use the next patch.
+https://www.drupal.org/project/default_content/issues/2952520
 
+```
 "extra": {
     "patches": {
         "drupal/default_content": {
@@ -9,3 +11,4 @@ To enable rewriting exist entities
         }
     },
 }
+```
