@@ -4,4 +4,4 @@ default_content_ui.form:
     _form: 'Drupal\default_content_ui\Form\DefaultContentForm'
     _title: 'Default content'
   requirements:
-    _access: 'TRUE'
+    _permission: 'access to default content form'

@@ -5,6 +5,7 @@ namespace Drupal\default_content_ui\Form;
 use Drupal\Core\Archiver\Zip;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\File\Exception\FileException;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -29,7 +30,7 @@ class DefaultContentForm extends FormBase {
   /**
    * The ZIP archive with the default content.
    */
-  private const DEFAULT_CONTENT_ZIP_URI = 'public://default-content-form/content.zip';
+  private const DEFAULT_CONTENT_ZIP_URI = 'temporary://default-content-form/content.zip';
 
   /**
    * The default content exporter.
@@ -102,7 +103,7 @@ class DefaultContentForm extends FormBase {
     $directory = str_replace(
       DRUPAL_ROOT . '/',
       '',
-      $this->fileSystem->realpath('public://default-content-form'),
+      $this->fileSystem->realpath('temporary://default-content-form'),
     );
     $this->moduleExtensionList->setPathname(
       'default_content_ui_directory',
@@ -203,7 +204,8 @@ class DefaultContentForm extends FormBase {
       $zip = new Zip($this->fileSystem->realpath($archive_uri));
       $zip->extract($folder_uri);
       $this->defaultContentImporter->importContent('default_content_ui');
-    } else {
+    }
+    else {
       $this->messenger()->addStatus($this->t('The archive is empty'));
     }
   }
@@ -234,46 +236,53 @@ class DefaultContentForm extends FormBase {
     array &$form,
     FormStateInterface $form_state
   ) {
-    $entity_type_ids_string = $form_state->getValue('entity_type_ids');
-    $entity_type_ids = array_map('trim', explode(',', $entity_type_ids_string));
-    $folder_uri = $this->exportContent($entity_type_ids);
-    $zip_uri = $this->createArchive($folder_uri);
+    try {
+      $entity_type_ids_string = $form_state->getValue('entity_type_ids');
+      $entity_type_ids = array_map('trim', explode(',', $entity_type_ids_string));
+      $folder_uri = $this->exportContent($entity_type_ids);
+      $zip_uri = $this->createArchive($folder_uri);
 
-    $headers = [
-      'Content-Type' => $this->mimeTypeGuesser->guessMimeType($zip_uri),
-      'Content-Length' => filesize($zip_uri),
-    ];
-    $response = new BinaryFileResponse($zip_uri, 200, $headers);
-    $form_state->setResponse($response);
+      $headers = [
+        'Content-Type' => $this->mimeTypeGuesser->guessMimeType($zip_uri),
+        'Content-Length' => filesize($zip_uri),
+      ];
+      $response = new BinaryFileResponse($zip_uri, 200, $headers);
+      $form_state->setResponse($response);
+    }
+    catch (\Exception $e) {
+      $this->messenger()->addError($e->getMessage() . $e->getTraceAsString());
+    }
   }
 
   /**
    * Exports default content by entity type IDs.
    */
   private function exportContent(array $entity_type_ids): string {
-    $folder = $this->defaultContentDirectory();
-    $this->fileSystem->deleteRecursive($folder);
-    $is_prepared = $this->fileSystem->prepareDirectory($folder, FileSystemInterface::CREATE_DIRECTORY);
+    $folder_uri = $this->defaultContentDirectory();
+    $this->fileSystem->deleteRecursive($folder_uri);
+    $is_prepared = $this->fileSystem->prepareDirectory($folder_uri, FileSystemInterface::CREATE_DIRECTORY);
     if (!$is_prepared) {
       $this->messenger()->addStatus($this->t('The directory "@directory" is not writable.', [
-        '@directory' => $folder,
+        '@directory' => $folder_uri,
       ]));
     }
+    $this->fileSystem->chmod($folder_uri, 0775);
 
     foreach ($entity_type_ids as $entity_type_id) {
       try {
         $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)->getQuery()->execute();
         foreach ($entity_ids as $entity_id) {
-          $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $folder);
+          $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $folder_uri);
         }
-      } catch (\Exception $e) {
+      }
+      catch (\Exception $e) {
         $this->messenger()->addStatus($this->t('The entity type "@entity_type_id" was not found.', [
           '@entity_type_id' => $entity_type_id,
         ]));
       }
     }
 
-    return $folder;
+    return $folder_uri;
   }
 
   /**
@@ -281,12 +290,11 @@ class DefaultContentForm extends FormBase {
    */
   private function createArchive(string $folder_uri): string {
     $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
-    if (file_exists($zip_uri)) {
-      $this->fileSystem->delete($zip_uri);
-    }
+    $zip_directory = dirname($zip_uri);
+    $this->prepareDirectory($zip_directory);
     $zip_path = $this->fileSystem->realpath($zip_uri);
 
-    $zip = new \ZipArchive;
+    $zip = new \ZipArchive();
     $zip->open($zip_path, \ZipArchive::CREATE);
     $files = $this->fileSystem->scanDirectory($folder_uri, '/.*/');
     foreach ($files as $file) {
@@ -297,6 +305,9 @@ class DefaultContentForm extends FormBase {
       );
     }
     $zip->close();
+    if (!file_exists($zip_path)) {
+      throw new FileException('An archive with the content was not created.');
+    }
 
     return $zip_uri;
   }
