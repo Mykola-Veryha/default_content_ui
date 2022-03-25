@@ -22,14 +22,10 @@ use Symfony\Component\Mime\MimeTypeGuesserInterface;
  */
 class DefaultContentForm extends FormBase {
 
-  /**
-   * Entity type IDs to export or import.
-   */
   private const CONFIG_NAME_OF_ENTITY_TYPE_IDS = 'default_content_form.entity_type_ids';
 
-  /**
-   * The ZIP archive with the default content.
-   */
+  public const LOCK_ID = 'default_content_form_lock';
+
   private const DEFAULT_CONTENT_ZIP_URI = 'temporary://default-content-form/content.zip';
 
   /**
@@ -203,7 +199,9 @@ class DefaultContentForm extends FormBase {
       $archive_uri = $this->fileSystem->copy($zip_file->getRealPath(), $zip_uri);
       $zip = new Zip($this->fileSystem->realpath($archive_uri));
       $zip->extract($folder_uri);
+      $this->state->set(self::LOCK_ID, TRUE);
       $this->defaultContentImporter->importContent('default_content_ui_directory');
+      $this->state->set(self::LOCK_ID, FALSE);
     }
     else {
       $this->messenger()->addStatus($this->t('The archive is empty'));

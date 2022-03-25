@@ -6,11 +6,13 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\default_content_ui\Form\DefaultContentForm;
 
 /**
  * Implements hook_entity_presave().
  */
 function default_content_ui_entity_presave(EntityInterface $entity) {
+  if (Drupal::state()->get(DefaultContentForm::LOCK_ID, FALSE) && $entity->isNew()) {
     $storage = Drupal::entityTypeManager()->getStorage($entity->getEntityTypeId());
     $exist_entities = $storage->loadByProperties([
       'uuid' => $entity->uuid(),
@@ -20,4 +22,5 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
       // Delete previous entity.
       $exist_entity->delete();
     }
+  }
 }
