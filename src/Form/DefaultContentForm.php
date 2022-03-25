@@ -203,7 +203,7 @@ class DefaultContentForm extends FormBase {
       $archive_uri = $this->fileSystem->copy($zip_file->getRealPath(), $zip_uri);
       $zip = new Zip($this->fileSystem->realpath($archive_uri));
       $zip->extract($folder_uri);
-      $this->defaultContentImporter->importContent('default_content_ui');
+      $this->defaultContentImporter->importContent('default_content_ui_directory');
     }
     else {
       $this->messenger()->addStatus($this->t('The archive is empty'));
