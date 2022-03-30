@@ -24,3 +24,18 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
     }
   }
 }
+
+/**
+ * Implements hook_file_download().
+ */
+function default_content_ui_file_download($uri): array {
+  if (Drupal::currentUser()->hasPermission('access to default content form')) {
+    return [
+      'Content-Type' => \Drupal::service('file.mime_type.guesser')->guessMimeType($uri),
+      'Content-Length' => filesize($uri),
+      'Cache-Control' => 'no-cache, must-revalidate',
+    ];
+  }
+
+  return [];
+}
