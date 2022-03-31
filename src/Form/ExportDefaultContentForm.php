@@ -2,7 +2,7 @@
 
 namespace Drupal\default_content_ui\Form;
 
-use Drupal\Core\Archiver\Zip;
+use Drupal\Component\Uuid\UuidInterface;
 use Drupal\Core\Batch\BatchBuilder;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
@@ -11,52 +11,34 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\default_content\ExporterInterface;
-use Drupal\default_content\ImporterInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
-use Symfony\Component\Mime\MimeTypeGuesserInterface;
 
 /**
- * Export and import the default content.
+ * Export the default content.
  */
-class DefaultContentForm extends FormBase {
+class ExportDefaultContentForm extends FormBase {
 
   private const CONFIG_NAME_OF_ENTITY_TYPE_IDS = 'default_content_form.entity_type_ids';
 
-  public const LOCK_ID = 'default_content_form_lock';
-
   private const DEFAULT_CONTENT_ZIP_URI = 'temporary://default-content-form/zip/content.zip';
 
-  private const DEFAULT_CONTENT_DIRECTORY = 'temporary://default-content-form/content';
-
-  /**
-   * The MIME type guesser.
-   *
-   * @var \Symfony\Component\Mime\MimeTypeGuesserInterface
-   */
-  protected MimeTypeGuesserInterface $mimeTypeGuesser;
+  private const DEFAULT_CONTENT_DIRECTORY = 'temporary://default-content-form';
 
   /**
    * The state.
    *
    * @var \Drupal\Core\State\StateInterface
    */
-  private StateInterface $state;
+  protected StateInterface $state;
 
   /**
    * The entity type manager service.
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
-  private EntityTypeManagerInterface $entityTypeManager;
-
-  /**
-   * The default content importer.
-   *
-   * @var \Drupal\default_content\ImporterInterface
-   */
-  private ImporterInterface $defaultContentImporter;
+  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * Batch Builder.
@@ -66,27 +48,50 @@ class DefaultContentForm extends FormBase {
   private BatchBuilder $batchBuilder;
 
   /**
+   * The file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected FileSystemInterface $fileSystem;
+
+  /**
+   * The module extension list.
+   *
+   * @var \Drupal\Core\Extension\ModuleExtensionList
+   */
+  protected ModuleExtensionList $moduleExtensionList;
+
+  /**
+   * The default content exporter.
+   *
+   * @var \Drupal\default_content\ExporterInterface
+   */
+  protected ExporterInterface $defaultContentExporter;
+
+  /**
+   * The UUID service.
+   *
+   * @var \Drupal\Component\Uuid\UuidInterface
+   */
+  protected UuidInterface $uuidService;
+
+  /**
    * Export and import the default content.
    */
   public function __construct(
     StateInterface $state,
     EntityTypeManagerInterface $entity_type_manager,
-    MimeTypeGuesserInterface $mime_type_guesser,
-    ImporterInterface $default_content_importer
+    FileSystemInterface $file_system,
+    ModuleExtensionList $extension_list_module,
+    ExporterInterface $default_content_exporter,
+    UuidInterface $uuid_service
   ) {
-    $this->defaultContentImporter = $default_content_importer;
     $this->state = $state;
     $this->entityTypeManager = $entity_type_manager;
-    $this->mimeTypeGuesser = $mime_type_guesser;
-    $directory = str_replace(
-      DRUPAL_ROOT . '/',
-      '',
-      $this->fileSystem()->realpath('temporary://default-content-form'),
-    );
-    $this->moduleExtensionList()->setPathname(
-      'default_content_ui_directory',
-      $directory
-    );
+    $this->fileSystem = $file_system;
+    $this->defaultContentExporter = $default_content_exporter;
+    $this->moduleExtensionList = $extension_list_module;
+    $this->uuidService = $uuid_service;
     $this->batchBuilder = new BatchBuilder();
   }
 
@@ -97,8 +102,10 @@ class DefaultContentForm extends FormBase {
     return new static(
       $container->get('state'),
       $container->get('entity_type.manager'),
-      $container->get('file.mime_type.guesser'),
-      $container->get('default_content.importer')
+      $container->get('file_system'),
+      $container->get('extension.list.module'),
+      $container->get('default_content.exporter'),
+      $container->get('uuid')
     );
   }
 
@@ -106,7 +113,7 @@ class DefaultContentForm extends FormBase {
    * {@inheritdoc}
    */
   public function getFormId(): string {
-    return 'default_content_form';
+    return 'export_default_content_form';
   }
 
   /**
@@ -126,21 +133,6 @@ class DefaultContentForm extends FormBase {
       '#type' => 'submit',
       '#value' => $this->t('Export default content'),
       '#button_type' => 'primary',
-      '#submit' => [[$this, 'exportSubmit']],
-    ];
-
-    $form['zip'] = [
-      '#title' => $this->t('Zip archive'),
-      '#type' => 'file',
-      '#upload_validators' => [
-        'file_validate_extensions' => ['zip'],
-      ],
-    ];
-    $form['import'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Import default content'),
-      '#button_type' => 'primary',
-      '#submit' => ['::importSubmit'],
     ];
 
     return $form;
@@ -153,68 +145,9 @@ class DefaultContentForm extends FormBase {
     array &$form,
     FormStateInterface $form_state
   ): void {
-  }
-
-  /**
-   * Exports an entity and all its referenced entities.
-   *
-   * @throws \Drupal\Core\Archiver\ArchiverException
-   *
-   * @noinspection PhpUnusedParameterInspection
-   */
-  public function importSubmit(
-    array &$form,
-    FormStateInterface $form_state
-  ) {
-    $files = $this->getRequest()->files->get('files', []);
-    $zip_file = $files['zip'] ?? NULL;
-    if ($zip_file instanceof UploadedFile) {
-      $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
-      $this->prepareDirectory(dirname($zip_uri));
-
-      $folder_uri = $this->defaultContentDirectory();
-      $this->prepareDirectory($folder_uri);
-
-      $archive_uri = $this->fileSystem()->copy($zip_file->getRealPath(), $zip_uri);
-      $zip = new Zip($this->fileSystem()->realpath($archive_uri));
-      $zip->extract($folder_uri);
-      $this->state->set(self::LOCK_ID, TRUE);
-      $this->defaultContentImporter->importContent('default_content_ui_directory');
-      $this->state->set(self::LOCK_ID, FALSE);
-    }
-    else {
-      $this->messenger()->addStatus($this->t('The archive is empty'));
-    }
-  }
-
-  /**
-   * Directory to store the default content.
-   */
-  private function defaultContentDirectory(): string {
-    return self::DEFAULT_CONTENT_DIRECTORY;
-  }
-
-  /**
-   * Prepare directory.
-   */
-  private function prepareDirectory(string $directory_uri) {
-    if (file_exists($directory_uri)) {
-      $this->fileSystem()->deleteRecursive($directory_uri);
-    }
-    $this->fileSystem()->prepareDirectory($directory_uri, FileSystemInterface::CREATE_DIRECTORY);
-  }
-
-  /**
-   * Exports an entity and all its referenced entities.
-   *
-   * @noinspection PhpUnusedParameterInspection
-   */
-  public function exportSubmit(
-    array &$form,
-    FormStateInterface $form_state
-  ) {
     try {
       $entity_type_ids_string = $form_state->getValue('entity_type_ids');
+      $this->state->set(self::CONFIG_NAME_OF_ENTITY_TYPE_IDS, $entity_type_ids_string);
       $entity_type_ids = array_map('trim', explode(',', $entity_type_ids_string));
 
       $this->batchBuilder
@@ -222,7 +155,6 @@ class DefaultContentForm extends FormBase {
         ->setInitMessage($this->t('Initializing.'))
         ->setProgressMessage($this->t('Completed @current of @total.'))
         ->setErrorMessage($this->t('An error has occurred.'));
-      $this->batchBuilder->setFile($this->moduleExtensionList()->getPath('default_content_ui') . '/src/Form/DefaultContentForm.php');
       $this->batchBuilder->addOperation([$this, 'prepareExportDirectory'], []);
       foreach ($entity_type_ids as $entity_type_id) {
         $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)->getQuery()->execute();
@@ -238,11 +170,21 @@ class DefaultContentForm extends FormBase {
   }
 
   /**
+   * Prepare directory.
+   */
+  private function prepareDirectory(string $directory_uri) {
+    if (file_exists($directory_uri)) {
+      $this->fileSystem->deleteRecursive($directory_uri);
+    }
+    $this->fileSystem->prepareDirectory($directory_uri, FileSystemInterface::CREATE_DIRECTORY);
+  }
+
+  /**
    * Processor for batch operations.
    */
   public function processEntities(array $entity_ids, string $entity_type_id, array &$context) {
     // Elements per operation.
-    $limit = 50;
+    $limit = 20;
 
     // Set default progress values.
     if (empty($context['sandbox']['progress'])) {
@@ -256,28 +198,31 @@ class DefaultContentForm extends FormBase {
     }
 
     $counter = 0;
+
     if (!empty($context['sandbox']['entity_ids'])) {
       // Remove already processed items.
       if ($context['sandbox']['progress'] != 0) {
         array_splice($context['sandbox']['entity_ids'], 0, $limit);
       }
 
+      $directory = $this->uuidService->generate();
       foreach ($context['sandbox']['entity_ids'] as $entity_id) {
-        if ($counter != $limit) {
-          $this->processItem($entity_id, $entity_type_id);
-
-          $counter++;
-          $context['sandbox']['progress']++;
-
-          $context['message'] = $this->t('Now processing node :progress of :count', [
-            ':progress' => $context['sandbox']['progress'],
-            ':count' => $context['sandbox']['max'],
-          ]);
-
-          // Increment total processed item values. Will be used in finished
-          // callback.
-          $context['results']['processed'] = $context['sandbox']['progress'];
+        if ($counter >= $limit) {
+          break;
         }
+        $this->processItem($entity_id, $entity_type_id, $directory);
+
+        $counter++;
+        $context['sandbox']['progress']++;
+
+        $context['message'] = $this->t('Now processing node :progress of :count', [
+          ':progress' => $context['sandbox']['progress'],
+          ':count' => $context['sandbox']['max'],
+        ]);
+
+        // Increment total processed item values.
+        // Will be used in finished callback.
+        $context['results']['processed'] = $context['sandbox']['progress'];
       }
     }
 
@@ -287,24 +232,29 @@ class DefaultContentForm extends FormBase {
     }
   }
 
-  public function processItem(int $entity_id, string $entity_type_id) {
-    $this->defaultContentExporter()->exportContentWithReferences(
-      $entity_type_id,
-      $entity_id,
-      self::DEFAULT_CONTENT_DIRECTORY
-    );
+  /**
+   * Export entity.
+   */
+  public function processItem(int $entity_id, string $entity_type_id, $directory): array {
+    $entity_directory = self::DEFAULT_CONTENT_DIRECTORY . "/$directory/content";
+    $this->prepareDirectory($entity_directory);
+
+    return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $entity_directory);
   }
 
+  /**
+   * Prepare export directory.
+   */
   public function prepareExportDirectory() {
     $folder_uri = self::DEFAULT_CONTENT_DIRECTORY;
-    $this->fileSystem()->deleteRecursive($folder_uri);
-    $is_prepared = $this->fileSystem()->prepareDirectory($folder_uri, FileSystemInterface::CREATE_DIRECTORY);
+    $this->fileSystem->deleteRecursive($folder_uri);
+    $is_prepared = $this->fileSystem->prepareDirectory($folder_uri, FileSystemInterface::CREATE_DIRECTORY);
     if (!$is_prepared) {
       $this->messenger()->addStatus($this->t('The directory "@directory" is not writable.', [
         '@directory' => $folder_uri,
       ]));
     }
-    $this->fileSystem()->chmod($folder_uri, 0775);
+    $this->fileSystem->chmod($folder_uri, 0775);
   }
 
   /**
@@ -313,13 +263,11 @@ class DefaultContentForm extends FormBase {
    * @noinspection PhpUnusedParameterInspection
    */
   public function finished($success, $results, $operations) {
-    $message = $this->t('Number of nodes exported by batch: @count, Url: @url', [
+    $message = new TranslatableMarkup('Number of nodes exported by batch: @count, Url: <a href="@url">@url</a>', [
       '@count' => $results['processed'],
       '@url' => \Drupal::service('file_url_generator')->generateAbsoluteString(self::DEFAULT_CONTENT_ZIP_URI),
     ]);
-
-    $this->messenger()
-      ->addStatus($message);
+    $this->messenger()->addStatus($message);
   }
 
   /**
@@ -329,15 +277,15 @@ class DefaultContentForm extends FormBase {
     $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
     $zip_directory = dirname($zip_uri);
     $this->prepareDirectory($zip_directory);
-    $zip_path = $this->fileSystem()->realpath($zip_uri);
+    $zip_path = $this->fileSystem->realpath($zip_uri);
 
     $zip = new \ZipArchive();
     $zip->open($zip_path, \ZipArchive::CREATE);
-    $files = $this->fileSystem()->scanDirectory($folder_uri, '/.*/');
+    $files = $this->fileSystem->scanDirectory($folder_uri, '/.*/');
     foreach ($files as $file) {
       $file_relative_path = str_replace($folder_uri . '/', '', $file->uri);
       $zip->addFile(
-        $this->fileSystem()->realpath($file->uri),
+        $this->fileSystem->realpath($file->uri),
         $file_relative_path
       );
     }
@@ -350,24 +298,16 @@ class DefaultContentForm extends FormBase {
   }
 
   /**
-   * The module extension list.
+   * {@inheritdoc}
    */
-  public function moduleExtensionList(): ModuleExtensionList {
-    return \Drupal::service('extension.list.module');
-  }
-
-  /**
-   * The file system service.
-   */
-  public function fileSystem(): FileSystemInterface {
-    return \Drupal::service('file_system');
-  }
-
-  /**
-   * The default content exporter.
-   */
-  public function defaultContentExporter(): ExporterInterface {
-    return \Drupal::service('default_content.exporter');
+  public function __wakeup() {
+    $this->_serviceIds = [
+      'fileSystem' => 'file_system',
+      'defaultContentExporter' => 'default_content.exporter',
+      'moduleExtensionList' => 'extension.list.module',
+      'uuidService' => 'uuid',
+    ];
+    parent::__wakeup();
   }
 
 }

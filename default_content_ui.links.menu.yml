@@ -1,4 +1,14 @@
-default_content_ui.form:
+default_content_ui.default_content_form:
   title: 'Default content'
-  route_name: default_content_ui.form
+  route_name: default_content_ui.export_form
   parent: system.admin_content
+
+default_content_ui.export_form:
+  title: 'Export content'
+  route_name: default_content_ui.export_form
+  parent: default_content_ui.default_content_form
+
+default_content_ui.import_form:
+  title: 'Import content'
+  route_name: default_content_ui.import_form
+  parent: default_content_ui.default_content_form

@@ -1,7 +1,15 @@
-default_content_ui.form:
-  path: '/admin/content/default-content'
+default_content_ui.export_form:
+  path: '/admin/content/default-content/export'
   defaults:
-    _form: 'Drupal\default_content_ui\Form\DefaultContentForm'
-    _title: 'Default content'
+    _form: 'Drupal\default_content_ui\Form\ExportDefaultContentForm'
+    _title: 'Export content'
+  requirements:
+    _permission: 'access to default content form'
+
+default_content_ui.import_form:
+  path: '/admin/content/default-content/import'
+  defaults:
+    _form: 'Drupal\default_content_ui\Form\ImportDefaultContentForm'
+    _title: 'Import content'
   requirements:
     _permission: 'access to default content form'
