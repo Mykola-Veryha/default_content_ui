@@ -158,7 +158,10 @@ class ExportDefaultContentForm extends FormBase {
       $this->batchBuilder->addOperation([$this, 'prepareExportDirectory'], []);
       foreach ($entity_type_ids as $entity_type_id) {
         $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)->getQuery()->execute();
-        $this->batchBuilder->addOperation([$this, 'processEntities'], [$entity_ids, $entity_type_id]);
+        $this->batchBuilder->addOperation(
+          [$this, 'processEntities'],
+          [$entity_ids, $entity_type_id]
+        );
       }
       $this->batchBuilder->addOperation([$this, 'createArchive'], [self::DEFAULT_CONTENT_DIRECTORY]);
       $this->batchBuilder->setFinishCallback([$this, 'finished']);
