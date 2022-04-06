@@ -157,7 +157,10 @@ class ExportDefaultContentForm extends FormBase {
         ->setErrorMessage($this->t('An error has occurred.'));
       $this->batchBuilder->addOperation([$this, 'prepareExportDirectory'], []);
       foreach ($entity_type_ids as $entity_type_id) {
-        $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)->getQuery()->execute();
+        $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)
+          ->getQuery()
+          ->accessCheck(FALSE)
+          ->execute();
         $this->batchBuilder->addOperation(
           [$this, 'processEntities'],
           [$entity_ids, $entity_type_id]
@@ -209,6 +212,7 @@ class ExportDefaultContentForm extends FormBase {
       }
 
       $directory = $this->uuidService->generate();
+      $this->prepareDirectory($directory);
       foreach ($context['sandbox']['entity_ids'] as $entity_id) {
         if ($counter >= $limit) {
           break;
@@ -240,7 +244,6 @@ class ExportDefaultContentForm extends FormBase {
    */
   public function processItem(int $entity_id, string $entity_type_id, $directory): array {
     $entity_directory = self::DEFAULT_CONTENT_DIRECTORY . "/$directory/content";
-    $this->prepareDirectory($entity_directory);
 
     return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $entity_directory);
   }
