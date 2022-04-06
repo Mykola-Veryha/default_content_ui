@@ -212,12 +212,13 @@ class ExportDefaultContentForm extends FormBase {
       }
 
       $directory = $this->uuidService->generate();
-      $this->prepareDirectory($directory);
+      $entity_directory = self::DEFAULT_CONTENT_DIRECTORY . "/$directory/content";
+      $this->prepareDirectory($entity_directory);
       foreach ($context['sandbox']['entity_ids'] as $entity_id) {
         if ($counter >= $limit) {
           break;
         }
-        $this->processItem($entity_id, $entity_type_id, $directory);
+        $this->processItem($entity_id, $entity_type_id, $entity_directory);
 
         $counter++;
         $context['sandbox']['progress']++;
@@ -243,9 +244,7 @@ class ExportDefaultContentForm extends FormBase {
    * Export entity.
    */
   public function processItem(int $entity_id, string $entity_type_id, $directory): array {
-    $entity_directory = self::DEFAULT_CONTENT_DIRECTORY . "/$directory/content";
-
-    return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $entity_directory);
+    return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $directory);
   }
 
   /**
