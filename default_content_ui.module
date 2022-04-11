@@ -17,10 +17,11 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
     $exist_entities = $storage->loadByProperties([
       'uuid' => $entity->uuid(),
     ]);
-    $exist_entity = reset($exist_entities);
-    if ($exist_entity instanceof EntityInterface) {
-      // Delete previous entity.
-      $exist_entity->delete();
+    if (!empty($exist_entities)) {
+      $entity->enforceIsNew(FALSE);
+      if (empty($entity->original)) {
+        $entity->original = $entity;
+      }
     }
   }
 }

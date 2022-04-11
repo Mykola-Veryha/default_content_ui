@@ -227,16 +227,21 @@ class ImportDefaultContentForm extends FormBase {
    * Export entity.
    */
   public function importContent(string $directory_uri, array &$context) {
-    $directory_name = basename($directory_uri);
-    // Set the subdirectory.
-    $this->moduleExtensionList->setPathname(
-      $directory_name,
-      $directory_uri . '/content'
-    );
-    $entities = $this->defaultContentImporter->importContent($directory_name);
-    // Increment total processed item values.
-    // Will be used in finished callback.
-    $context['results']['processed'] += count($entities);
+    try {
+      $directory_name = basename($directory_uri);
+      // Set the subdirectory.
+      $this->moduleExtensionList->setPathname(
+        $directory_name,
+        $directory_uri . '/content'
+      );
+      $entities = $this->defaultContentImporter->importContent($directory_name);
+      // Increment total processed item values.
+      // Will be used in finished callback.
+      $context['results']['processed'] += count($entities);
+    }
+    catch (\Exception $e) {
+      watchdog_exception('import_default_content_form', $e);
+    }
   }
 
   /**
