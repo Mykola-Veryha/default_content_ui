@@ -128,6 +128,7 @@ class ExportDefaultContentForm extends FormBase {
       '#title' => $this->t('Entity type IDs'),
       '#type' => 'textfield',
       '#default_value' => $entity_type_ids,
+      '#maxlength' => 256,
     ];
     $form['export'] = [
       '#type' => 'submit',
@@ -218,8 +219,12 @@ class ExportDefaultContentForm extends FormBase {
         if ($counter >= $limit) {
           break;
         }
-        $this->processItem($entity_id, $entity_type_id, $entity_directory);
-
+        try {
+          $this->processItem($entity_id, $entity_type_id, $entity_directory);
+        }
+        catch (\Throwable $e) {
+          watchdog_exception('default_content_ui', new \Exception($e->getMessage() . $e->getTraceAsString()));
+        }
         $counter++;
         $context['sandbox']['progress']++;
 
