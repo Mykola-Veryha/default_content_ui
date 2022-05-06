@@ -10,6 +10,13 @@ use Drupal\default_content_ui\Form\ImportDefaultContentForm;
 
 /**
  * Implements hook_entity_presave().
+ *
+ * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
+ *   Thrown if the entity type doesn't exist.
+ * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+ *   Thrown if the storage handler couldn't be loaded.
+ * @throws \Drupal\Core\Entity\EntityStorageException
+ *   In case of failures an exception is thrown.
  */
 function default_content_ui_entity_presave(EntityInterface $entity) {
   if (Drupal::state()->get(ImportDefaultContentForm::LOCK_ID, FALSE) && $entity->isNew()) {
@@ -23,6 +30,12 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
         $entity->original = $entity;
       }
     }
+
+    $entity_by_id = $storage->load($entity->id());
+    // Entity already exists but with different UUID.
+    if ($entity_by_id && empty($exist_entities)) {
+      $entity_by_id->delete();
+    }
   }
 }
 
@@ -32,7 +45,7 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
 function default_content_ui_file_download($uri): array {
   if (Drupal::currentUser()->hasPermission('access to default content form')) {
     return [
-      'Content-Type' => \Drupal::service('file.mime_type.guesser')->guessMimeType($uri),
+      'Content-Type' => Drupal::service('file.mime_type.guesser')->guessMimeType($uri),
       'Content-Length' => filesize($uri),
       'Cache-Control' => 'no-cache, must-revalidate',
     ];
