@@ -130,6 +130,11 @@ class ExportDefaultContentForm extends FormBase {
       '#default_value' => $entity_type_ids,
       '#maxlength' => 256,
     ];
+    $form['entity_ids'] = [
+      '#title' => $this->t('Entity type IDs'),
+      '#type' => 'textfield',
+      '#description' => $this->t('Example: 45, 234. Leave empty to not filter by entity IDs.'),
+    ];
     $form['export'] = [
       '#type' => 'submit',
       '#value' => $this->t('Export default content'),
@@ -151,6 +156,9 @@ class ExportDefaultContentForm extends FormBase {
       $this->state->set(self::CONFIG_NAME_OF_ENTITY_TYPE_IDS, $entity_type_ids_string);
       $entity_type_ids = array_map('trim', explode(',', $entity_type_ids_string));
 
+      $entity_ids_string = $form_state->getValue('entity_ids');
+      $entity_ids_to_filter = array_filter(array_map('trim', explode(',', $entity_ids_string)));
+
       $this->batchBuilder
         ->setTitle($this->t('Processing'))
         ->setInitMessage($this->t('Initializing.'))
@@ -162,6 +170,9 @@ class ExportDefaultContentForm extends FormBase {
           ->getQuery()
           ->accessCheck(FALSE)
           ->execute();
+        if (!empty($entity_ids_to_filter)) {
+          $entity_ids = array_intersect($entity_ids, $entity_ids_to_filter);
+        }
         $this->batchBuilder->addOperation(
           [$this, 'processEntities'],
           [$entity_ids, $entity_type_id]
