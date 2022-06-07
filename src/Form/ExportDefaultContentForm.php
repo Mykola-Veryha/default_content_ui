@@ -303,6 +303,9 @@ class ExportDefaultContentForm extends FormBase {
     $zip = new \ZipArchive();
     $zip->open($zip_path, \ZipArchive::CREATE);
     $files = $this->fileSystem->scanDirectory($folder_uri, '/.*/');
+    if (empty($files)) {
+      throw new FileException('There are no entities to export');
+    }
     foreach ($files as $file) {
       $file_relative_path = str_replace($folder_uri . '/', '', $file->uri);
       $zip->addFile(
