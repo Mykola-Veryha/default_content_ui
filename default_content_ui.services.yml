@@ -1,0 +1,10 @@
+services:
+  default_content_ui.manager:
+    class: Drupal\default_content_ui\DefaultContentManager
+    arguments:
+      - '@state'
+      - '@entity_type.manager'
+      - '@default_content.importer'
+      - '@file_system'
+      - '@extension.list.module'
+      - '@uuid'

@@ -18,7 +18,7 @@ use Drupal\default_content_ui\Form\ImportDefaultContentForm;
  * @throws \Drupal\Core\Entity\EntityStorageException
  *   In case of failures an exception is thrown.
  */
-function default_content_ui_entity_presave(EntityInterface $entity) {
+function default_content_ui_entity_presave(EntityInterface $entity): void {
   if (Drupal::state()->get(ImportDefaultContentForm::LOCK_ID, FALSE) && $entity->isNew()) {
     $storage = Drupal::entityTypeManager()->getStorage($entity->getEntityTypeId());
     $exist_entities = $storage->loadByProperties([

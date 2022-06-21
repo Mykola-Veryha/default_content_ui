@@ -1,31 +1,41 @@
 <?php
 
-namespace Drupal\default_content_ui\Form;
+declare(strict_types=1);
+
+namespace Drupal\default_content_ui;
 
 use Drupal\Component\Uuid\UuidInterface;
-use Drupal\Core\Archiver\Zip;
 use Drupal\Core\Batch\BatchBuilder;
+use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileSystemInterface;
-use Drupal\Core\Form\FormBase;
-use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Messenger\MessengerTrait;
 use Drupal\Core\State\StateInterface;
-use Drupal\Core\StringTranslation\TranslatableMarkup;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\default_content\ImporterInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 /**
- * Import the default content.
+ * Provides default_content_ui service manager.
  */
-class ImportDefaultContentForm extends FormBase {
+class DefaultContentManager {
 
-  public const LOCK_ID = 'default_content_form_lock';
+  use DependencySerializationTrait {
+    __wakeup as defaultWakeup;
+  }
+  use MessengerTrait;
+  use StringTranslationTrait;
 
-  private const DEFAULT_CONTENT_ZIP_URI = 'temporary://default-content-form/zip/content.zip';
+  /**
+   * Default folder for exported content.
+   */
+  public const DEFAULT_IMPORT_FOLDER = 'default_content_ui/stored-content';
 
-  private const DEFAULT_CONTENT_DIRECTORY = 'temporary://default-content-form';
+  /**
+   * The name used to identify the lock.
+   */
+  private const LOCK_ID = 'default_content_import_lock';
 
   /**
    * The state.
@@ -77,7 +87,7 @@ class ImportDefaultContentForm extends FormBase {
   protected UuidInterface $uuidService;
 
   /**
-   * Export and import the default content.
+   * Import the default content.
    */
   public function __construct(
     StateInterface $state,
@@ -111,63 +121,20 @@ class ImportDefaultContentForm extends FormBase {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  public function getFormId(): string {
-    return 'import_default_content_form';
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function buildForm(array $form, FormStateInterface $form_state): array {
-    $form['zip'] = [
-      '#title' => $this->t('Zip archive'),
-      '#type' => 'file',
-      '#upload_validators' => [
-        'file_validate_extensions' => ['zip'],
-      ],
-    ];
-    $form['import'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Import default content'),
-      '#button_type' => 'primary',
-      '#submit' => [[$this, 'importSubmit']],
-    ];
-
-    return $form;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function submitForm(
-    array &$form,
-    FormStateInterface $form_state
-  ): void {
-  }
-
-  /**
-   * Imports an entity and all its referenced entities.
+   * Import default content from specified folder.
    *
-   * @param array $form
-   *   An associative array containing the structure of the form.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The current state of the form.
+   * @param string|null $folder
+   *   Folder URI.
    *
-   * @noinspection PhpUnusedParameterInspection
+   * @return array|null
+   *   A batch structure or FALSE if $files was empty.
    */
-  public function importSubmit(
-    array &$form,
-    FormStateInterface $form_state
-  ): void {
+  public function import(string $folder = NULL): ?array {
     try {
-      $files = $this->getRequest()->files->get('files', []);
-      $zip_file = $files['zip'] ?? NULL;
-      if ($zip_file instanceof UploadedFile) {
-        $folder_uri = self::DEFAULT_CONTENT_DIRECTORY;
-        $this->prepareDirectory($folder_uri);
-        $this->extractArchive($zip_file, $folder_uri);
+      $folder_name = $folder ?? self::DEFAULT_IMPORT_FOLDER;
+      $folder_uri = DRUPAL_ROOT . '/' . $folder_name;
+
+      if (is_dir($folder_uri) && file_exists($folder_uri)) {
         $this->state->set(self::LOCK_ID, TRUE);
 
         $this->batchBuilder
@@ -186,34 +153,18 @@ class ImportDefaultContentForm extends FormBase {
 
         $this->batchBuilder->addOperation([$this, 'setLockStatus'], [FALSE]);
         $this->batchBuilder->setFinishCallback([$this, 'finished']);
-        batch_set($this->batchBuilder->toArray());
+
+        return $this->batchBuilder->toArray();
       }
       else {
-        $this->messenger()->addStatus($this->t('The archive is empty'));
+        $this->messenger()->addStatus($this->t('Default content folder is not exist'));
       }
     }
     catch (\Exception $e) {
-      $this->messenger()->addError($e->getMessage() . $e->getTraceAsString());
+      watchdog_exception('default_content_service_import', $e);
     }
-  }
 
-  /**
-   * Extract archive.
-   *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $zip_file
-   *   Archived file with exported content.
-   * @param string $folder_uri
-   *   Target folder URI.
-   *
-   * @throws \Drupal\Core\Archiver\ArchiverException
-   */
-  private function extractArchive(UploadedFile $zip_file, string $folder_uri): void {
-    $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
-    $this->prepareDirectory(dirname($zip_uri));
-
-    $archive_uri = $this->fileSystem->copy($zip_file->getRealPath(), $zip_uri);
-    $zip = new Zip($this->fileSystem->realpath($archive_uri));
-    $zip->extract($folder_uri);
+    return NULL;
   }
 
   /**
@@ -229,25 +180,12 @@ class ImportDefaultContentForm extends FormBase {
   }
 
   /**
-   * Prepare directory.
+   * Import entities.
    *
    * @param string $directory_uri
-   *   Target folder URI.
-   */
-  private function prepareDirectory(string $directory_uri): void {
-    if (file_exists($directory_uri)) {
-      $this->fileSystem->deleteRecursive($directory_uri);
-    }
-    $this->fileSystem->prepareDirectory($directory_uri, FileSystemInterface::CREATE_DIRECTORY);
-  }
-
-  /**
-   * Import entity.
-   *
-   * @param string $directory_uri
-   *   Source folder URI.
+   *   Source directory.
    * @param array $context
-   *   Batch context.
+   *   The batch context.
    */
   public function importContent(string $directory_uri, array &$context): void {
     try {
@@ -263,7 +201,7 @@ class ImportDefaultContentForm extends FormBase {
       $context['results']['processed'] += count($entities);
     }
     catch (\Exception $e) {
-      watchdog_exception('import_default_content_form', $e);
+      watchdog_exception('default_content_service_import', $e);
     }
   }
 
@@ -280,7 +218,7 @@ class ImportDefaultContentForm extends FormBase {
    * @noinspection PhpUnusedParameterInspection
    */
   public function finished(bool $success, array $results, array $operations): void {
-    $message = new TranslatableMarkup('Number of content imported by batch: @count', [
+    $message = $this->t('Number of content imported by batch: @count', [
       '@count' => $results['processed'],
     ]);
     $this->messenger()->addStatus($message);
@@ -298,7 +236,8 @@ class ImportDefaultContentForm extends FormBase {
       'state' => 'state',
       'defaultContentImporter' => 'default_content.importer',
     ];
-    parent::__wakeup();
+
+    $this->defaultWakeup();
   }
 
 }
