@@ -6,38 +6,6 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\default_content_ui\Form\ImportDefaultContentForm;
-
-/**
- * Implements hook_entity_presave().
- *
- * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
- *   Thrown if the entity type doesn't exist.
- * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
- *   Thrown if the storage handler couldn't be loaded.
- * @throws \Drupal\Core\Entity\EntityStorageException
- *   In case of failures an exception is thrown.
- */
-function default_content_ui_entity_presave(EntityInterface $entity): void {
-  if (Drupal::state()->get(ImportDefaultContentForm::LOCK_ID, FALSE) && $entity->isNew()) {
-    $storage = Drupal::entityTypeManager()->getStorage($entity->getEntityTypeId());
-    $exist_entities = $storage->loadByProperties([
-      'uuid' => $entity->uuid(),
-    ]);
-    if (!empty($exist_entities)) {
-      $entity->enforceIsNew(FALSE);
-      if (empty($entity->original)) {
-        $entity->original = $entity;
-      }
-    }
-
-    $entity_by_id = $storage->load($entity->id());
-    // Entity already exists but with different UUID.
-    if ($entity_by_id && empty($exist_entities)) {
-      $entity_by_id->delete();
-    }
-  }
-}
 
 /**
  * Implements hook_file_download().

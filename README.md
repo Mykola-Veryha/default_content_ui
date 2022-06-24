@@ -80,4 +80,6 @@ function SUBSCRIPTION_profile_default_content_import() {
 ### N.B.: Issue with import default content by Import Form in the admin interface
 As default_content contribe module in `2.0-alpha1` version has several issues with import content on the site with already existed content, please be careful in this case.
 
+*Use only on fresh install*
+
 See https://www.drupal.org/project/default_content/issues/2698425
