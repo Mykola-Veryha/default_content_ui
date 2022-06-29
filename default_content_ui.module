@@ -31,10 +31,12 @@ function default_content_ui_entity_presave(EntityInterface $entity) {
       }
     }
 
-    $entity_by_id = $storage->load($entity->id());
-    // Entity already exists but with different UUID.
-    if ($entity_by_id && empty($exist_entities)) {
-      $entity_by_id->delete();
+    if (!empty($entity->id())) {
+      $entity_by_id = $storage->load($entity->id());
+      // Entity already exists but with different UUID.
+      if ($entity_by_id && empty($exist_entities)) {
+        $entity_by_id->delete();
+      }
     }
   }
 }
