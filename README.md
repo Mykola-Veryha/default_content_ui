@@ -77,6 +77,7 @@ function SUBSCRIPTION_profile_default_content_import() {
   $batch = $default_content_service->import($default_content_folder);
 
   if (!empty($batch)) {
+    drupal_flush_all_caches();
     return $batch;
   }
 }
