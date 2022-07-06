@@ -59,6 +59,12 @@ function SUBSCRIPTION_profile_default_content_import() {
   $module_handler = \Drupal::service('module_handler');
   $module_path = $module_handler->getModule('default_content_ui')->getPath();
   $default_content_folder = $module_path . '/stored-content';
+  // Environment check. Allows on testing environment for auto-tests only.
+  $is_test_ci_env = (bool) isset($_ENV['GITHUB_ACTIONS']) || isset($_ENV['TRAVIS']);
+  
+  if (!$is_test_ci_env) {
+    return;
+  }
 
   if (
     !$module_handler->moduleExists('default_content_ui') ||
