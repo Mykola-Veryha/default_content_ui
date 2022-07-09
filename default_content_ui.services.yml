@@ -1,0 +1,5 @@
+services:
+  default_content_ui.duplicate_resolver:
+    class: Drupal\default_content_ui\Service\DuplicateResolver
+    arguments:
+      - '@entity_type.manager'

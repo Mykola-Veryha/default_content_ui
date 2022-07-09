@@ -173,10 +173,12 @@ class ExportDefaultContentForm extends FormBase {
         if (!empty($entity_ids_to_filter)) {
           $entity_ids = array_intersect($entity_ids, $entity_ids_to_filter);
         }
-        $this->batchBuilder->addOperation(
-          [$this, 'processEntities'],
-          [$entity_ids, $entity_type_id]
-        );
+        if (!empty($entity_ids)) {
+          $this->batchBuilder->addOperation(
+            [$this, 'processEntities'],
+            [$entity_ids, $entity_type_id]
+          );
+        }
       }
       $this->batchBuilder->addOperation([$this, 'createArchive'], [self::DEFAULT_CONTENT_DIRECTORY]);
       $this->batchBuilder->setFinishCallback([$this, 'finished']);

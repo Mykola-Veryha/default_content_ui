@@ -5,6 +5,7 @@
  * Default content UI module.
  */
 
+use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\default_content_ui\Form\ImportDefaultContentForm;
 
@@ -20,26 +21,10 @@ use Drupal\default_content_ui\Form\ImportDefaultContentForm;
  */
 function default_content_ui_entity_presave(EntityInterface $entity) {
   if (Drupal::state()->get(ImportDefaultContentForm::LOCK_ID, FALSE) && $entity->isNew()) {
-    $storage = Drupal::entityTypeManager()->getStorage($entity->getEntityTypeId());
-    /** @var \Drupal\Core\Entity\ContentEntityBase $entity */
-    if ($entity->hasField('uuid')) {
-      $exist_entities = $storage->loadByProperties([
-        'uuid' => $entity->uuid(),
-      ]);
-      if (!empty($exist_entities)) {
-        $entity->enforceIsNew(FALSE);
-        if (empty($entity->original)) {
-          $entity->original = $entity;
-        }
-      }
-    }
-
-    if (!empty($entity->id())) {
-      $entity_by_id = $storage->load($entity->id());
-      // Entity already exists but with different UUID.
-      if ($entity_by_id && empty($exist_entities)) {
-        $entity_by_id->delete();
-      }
+    /** @var \Drupal\default_content_ui\Service\DuplicateResolver $duplicate_resolver */
+    $duplicate_resolver = Drupal::service('default_content_ui.duplicate_resolver');
+    if ($entity instanceof ContentEntityBase) {
+      $duplicate_resolver->resolveDuplicates($entity);
     }
   }
 }
