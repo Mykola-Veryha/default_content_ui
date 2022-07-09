@@ -180,7 +180,6 @@ class ExportDefaultContentForm extends FormBase {
           );
         }
       }
-      $this->batchBuilder->addOperation([$this, 'createArchive'], [self::DEFAULT_CONTENT_DIRECTORY]);
       $this->batchBuilder->setFinishCallback([$this, 'finished']);
       batch_set($this->batchBuilder->toArray());
     }
@@ -261,8 +260,9 @@ class ExportDefaultContentForm extends FormBase {
   /**
    * Export entity.
    */
-  public function processItem(int $entity_id, string $entity_type_id, $directory): array {
-    return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $directory);
+  public function processItem(int $entity_id, string $entity_type_id, $directory) {
+    $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $directory);
+    $this->addFolderFilesToArchive($directory);
   }
 
   /**
@@ -278,6 +278,10 @@ class ExportDefaultContentForm extends FormBase {
       ]));
     }
     $this->fileSystem->chmod($folder_uri, 0775);
+
+    $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
+    $zip_directory = dirname($zip_uri);
+    $this->prepareDirectory($zip_directory);
   }
 
   /**
@@ -296,20 +300,23 @@ class ExportDefaultContentForm extends FormBase {
   /**
    * Create an archive.
    */
-  public function createArchive(string $folder_uri): string {
+  public function addFolderFilesToArchive(string $folder_uri): string {
     $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
-    $zip_directory = dirname($zip_uri);
-    $this->prepareDirectory($zip_directory);
     $zip_path = $this->fileSystem->realpath($zip_uri);
 
     $zip = new \ZipArchive();
-    $zip->open($zip_path, \ZipArchive::CREATE);
+    if (file_exists($zip_path)) {
+      $zip->open($zip_path);
+    }
+    else {
+      $zip->open($zip_path, \ZipArchive::CREATE);
+    }
     $files = $this->fileSystem->scanDirectory($folder_uri, '/.*/');
     if (empty($files)) {
-      throw new FileException('There are no entities to export');
+      throw new FileException(sprintf('There are no entities to export: %', $folder_uri));
     }
     foreach ($files as $file) {
-      $file_relative_path = str_replace($folder_uri . '/', '', $file->uri);
+      $file_relative_path = str_replace(self::DEFAULT_CONTENT_DIRECTORY . '/', '', $file->uri);
       $zip->addFile(
         $this->fileSystem->realpath($file->uri),
         $file_relative_path
