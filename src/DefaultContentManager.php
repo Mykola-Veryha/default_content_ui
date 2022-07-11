@@ -218,6 +218,7 @@ class DefaultContentManager {
    * @noinspection PhpUnusedParameterInspection
    */
   public function finished(bool $success, array $results, array $operations): void {
+    $results['processed'] = $results['processed'] ?? $this->t('Count was not collected');
     $message = $this->t('Number of content imported by batch: @count', [
       '@count' => $results['processed'],
     ]);
