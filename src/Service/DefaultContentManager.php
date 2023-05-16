@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Drupal\default_content_ui;
+namespace Drupal\default_content_ui\Service;
 
 use Drupal\Component\Uuid\UuidInterface;
+use Drupal\Core\Archiver\Zip;
 use Drupal\Core\Batch\BatchBuilder;
 use Drupal\Core\DependencyInjection\DependencySerializationTrait;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -32,10 +33,15 @@ class DefaultContentManager {
    */
   public const DEFAULT_IMPORT_FOLDER = 'default_content_ui/stored-content';
 
+  private const DEFAULT_CONTENT_FOLDER = 'temporary://default-content-form/content';
+  private const DEFAULT_CONTENT_ZIP_URI = 'temporary://default-content-form/zip/content.zip';
+
+  private const DEFAULT_ZIP_FILE_NAME = 'content.zip';
+
   /**
    * The name used to identify the lock.
    */
-  private const LOCK_ID = 'default_content_import_lock';
+  public const LOCK_ID = 'default_content_import_lock';
 
   /**
    * The state.
@@ -125,16 +131,21 @@ class DefaultContentManager {
    *
    * @param string|null $folder
    *   Folder URI.
+   * @param string|null $zip_file
+   *   Archived content file.
    *
    * @return array|null
    *   A batch structure or FALSE if $files was empty.
    */
-  public function import(string $folder = NULL): ?array {
+  public function import(string $folder = NULL, string $zip_file = NULL): ?array {
     try {
       $folder_name = $folder ?? self::DEFAULT_IMPORT_FOLDER;
+      $zip_file = $zip_file ?? self::DEFAULT_ZIP_FILE_NAME;
       $folder_uri = DRUPAL_ROOT . '/' . $folder_name;
+      $zip_uri = $folder_uri . '/' . $zip_file;
 
-      if (is_dir($folder_uri) && file_exists($folder_uri)) {
+      if (\is_dir($folder_uri) && \file_exists($folder_uri) && \file_exists($zip_uri)) {
+        $this->extractArchive($zip_uri, self::DEFAULT_CONTENT_FOLDER);
         $this->state->set(self::LOCK_ID, TRUE);
 
         $this->batchBuilder
@@ -142,11 +153,12 @@ class DefaultContentManager {
           ->setInitMessage($this->t('Initializing.'))
           ->setProgressMessage($this->t('Completed @current of @total.'))
           ->setErrorMessage($this->t('An error has occurred.'));
-        $sub_directories = array_diff(scandir($folder_uri), ['.', '..']);
+
+        $sub_directories = \array_diff(\scandir(self::DEFAULT_CONTENT_FOLDER), ['.', '..']);
 
         foreach ($sub_directories as $directory_name) {
-          $sub_directory_uri = $folder_uri . "/$directory_name";
-          if (is_dir($sub_directory_uri)) {
+          $sub_directory_uri = self::DEFAULT_CONTENT_FOLDER . "/$directory_name";
+          if (\is_dir($sub_directory_uri)) {
             $this->batchBuilder->addOperation([$this, 'importContent'], [$sub_directory_uri]);
           }
         }
@@ -239,6 +251,32 @@ class DefaultContentManager {
     ];
 
     $this->defaultWakeup();
+  }
+
+  /**
+   * Extract archive.
+   *
+   * @throws \Drupal\Core\Archiver\ArchiverException
+   */
+  private function extractArchive(string $zip_file, string $folder_uri): void {
+    $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
+    $this->prepareDirectory(dirname($zip_uri));
+
+    if (\file_exists($zip_file)) {
+      $archive_uri = $this->fileSystem->copy($zip_file, $zip_uri);
+      $zip = new Zip($this->fileSystem->realpath($archive_uri));
+      $zip->extract($folder_uri);
+    }
+  }
+
+  /**
+   * Prepare directory.
+   */
+  private function prepareDirectory(string $directory_uri): void {
+    if (file_exists($directory_uri)) {
+      $this->fileSystem->deleteRecursive($directory_uri);
+    }
+    $this->fileSystem->prepareDirectory($directory_uri, FileSystemInterface::CREATE_DIRECTORY);
   }
 
 }

@@ -1,6 +1,10 @@
 services:
+  default_content_ui.duplicate_resolver:
+    class: Drupal\default_content_ui\Service\DuplicateResolver
+    arguments:
+      - '@entity_type.manager'
   default_content_ui.manager:
-    class: Drupal\default_content_ui\DefaultContentManager
+    class: Drupal\default_content_ui\Service\DefaultContentManager
     arguments:
       - '@state'
       - '@entity_type.manager'

@@ -148,19 +148,14 @@ class ImportDefaultContentForm extends FormBase {
   }
 
   /**
-   * Imports an entity and all its referenced entities.
-   *
-   * @param array $form
-   *   An associative array containing the structure of the form.
-   * @param \Drupal\Core\Form\FormStateInterface $form_state
-   *   The current state of the form.
+   * Exports an entity and all its referenced entities.
    *
    * @noinspection PhpUnusedParameterInspection
    */
   public function importSubmit(
     array &$form,
     FormStateInterface $form_state
-  ): void {
+  ) {
     try {
       $files = $this->getRequest()->files->get('files', []);
       $zip_file = $files['zip'] ?? NULL;
@@ -176,14 +171,12 @@ class ImportDefaultContentForm extends FormBase {
           ->setProgressMessage($this->t('Completed @current of @total.'))
           ->setErrorMessage($this->t('An error has occurred.'));
         $sub_directories = array_diff(scandir($folder_uri), ['.', '..']);
-
         foreach ($sub_directories as $directory_name) {
           $sub_directory_uri = $folder_uri . "/$directory_name";
           if (is_dir($sub_directory_uri)) {
             $this->batchBuilder->addOperation([$this, 'importContent'], [$sub_directory_uri]);
           }
         }
-
         $this->batchBuilder->addOperation([$this, 'setLockStatus'], [FALSE]);
         $this->batchBuilder->setFinishCallback([$this, 'finished']);
         batch_set($this->batchBuilder->toArray());
@@ -200,14 +193,9 @@ class ImportDefaultContentForm extends FormBase {
   /**
    * Extract archive.
    *
-   * @param \Symfony\Component\HttpFoundation\File\UploadedFile $zip_file
-   *   Archived file with exported content.
-   * @param string $folder_uri
-   *   Target folder URI.
-   *
    * @throws \Drupal\Core\Archiver\ArchiverException
    */
-  private function extractArchive(UploadedFile $zip_file, string $folder_uri): void {
+  private function extractArchive(UploadedFile $zip_file, string $folder_uri) {
     $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
     $this->prepareDirectory(dirname($zip_uri));
 
@@ -219,22 +207,16 @@ class ImportDefaultContentForm extends FormBase {
   /**
    * Enable import mode.
    *
-   * @param bool $is_locked
-   *   Lock status.
-   *
    * @see default_content_ui_entity_presave
    */
-  public function setLockStatus(bool $is_locked): void {
+  public function setLockStatus(bool $is_locked) {
     $this->state->set(self::LOCK_ID, $is_locked);
   }
 
   /**
    * Prepare directory.
-   *
-   * @param string $directory_uri
-   *   Target folder URI.
    */
-  private function prepareDirectory(string $directory_uri): void {
+  private function prepareDirectory(string $directory_uri) {
     if (file_exists($directory_uri)) {
       $this->fileSystem->deleteRecursive($directory_uri);
     }
@@ -242,14 +224,9 @@ class ImportDefaultContentForm extends FormBase {
   }
 
   /**
-   * Import entity.
-   *
-   * @param string $directory_uri
-   *   Source folder URI.
-   * @param array $context
-   *   Batch context.
+   * Export entity.
    */
-  public function importContent(string $directory_uri, array &$context): void {
+  public function importContent(string $directory_uri, array &$context) {
     try {
       $directory_name = basename($directory_uri);
       // Set the subdirectory.
@@ -270,16 +247,9 @@ class ImportDefaultContentForm extends FormBase {
   /**
    * Finished callback for batch.
    *
-   * @param bool $success
-   *   Indicate that the batch API tasks were all completed successfully.
-   * @param array $results
-   *   An array of all the results that were updated in update_do_one().
-   * @param array $operations
-   *   A list of the operations that had not been completed by the batch API.
-   *
    * @noinspection PhpUnusedParameterInspection
    */
-  public function finished(bool $success, array $results, array $operations): void {
+  public function finished($success, $results, $operations) {
     $message = new TranslatableMarkup('Number of content imported by batch: @count', [
       '@count' => $results['processed'],
     ]);
@@ -289,7 +259,7 @@ class ImportDefaultContentForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function __wakeup(): void {
+  public function __wakeup() {
     $this->_serviceIds = [
       'fileSystem' => 'file_system',
       'defaultContentExporter' => 'default_content.exporter',

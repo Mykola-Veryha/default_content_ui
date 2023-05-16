@@ -31,9 +31,10 @@ for further information.
 User allowed to export content with Export Form `/admin/content/default-content/export`
 1. Define Entity type IDs (by default `node, taxonomy_term, media, file, menu_link_content, block_content`)
 2. Also user can define Entity IDs to select Entities to export
-3. After form submit downloadable link with archived content will be generated
+3. After form submit downloadable link with archived content will be generated.
 4. To import default content on site install (in case of deployment website to the new environment or auto-test implementation) developer should:
-   * extract previously archived content to the `stored-content` folder in this module directory
+   * copy previously archived content to the `stored-content` folder in this module directory.
+     * `content.zip` filename expected by default. If you'll store archive in other name, please provide it in import method (see comments inside install function)
    * add new task to the `hook_install_tasks` in profile file:
 ```
 /**
@@ -59,7 +60,7 @@ function SUBSCRIPTION_profile_default_content_import() {
   $module_handler = \Drupal::service('module_handler');
   $module_path = $module_handler->getModule('default_content_ui')->getPath();
   $default_content_folder = $module_path . '/stored-content';
-  
+
   // Environment check. Allows on testing environment for auto-tests only.
   // Could be changed to any available on your envitonment flag variable.
   // Example:
@@ -76,6 +77,8 @@ function SUBSCRIPTION_profile_default_content_import() {
   }
 
   $default_content_service = \Drupal::service('default_content_ui.manager');
+  // You can provide your own archive name as method's second argument. E.g.:
+  // $batch = $default_content_service->import($default_content_folder, 'YOUR_ARCHIVE_NAME.zip');
   $batch = $default_content_service->import($default_content_folder);
 
   if (!empty($batch)) {

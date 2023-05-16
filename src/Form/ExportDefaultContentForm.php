@@ -122,7 +122,7 @@ class ExportDefaultContentForm extends FormBase {
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $entity_type_ids = $this->state->get(
       self::CONFIG_NAME_OF_ENTITY_TYPE_IDS,
-      'node, taxonomy_term, media, file, menu_link_content, block_content'
+      'node, paragraph, paragraphs_library_item, redirect, path_alias, taxonomy_term, file, menu_link_content, block_content'
     );
     $form['entity_type_ids'] = [
       '#title' => $this->t('Entity type IDs'),
@@ -164,21 +164,22 @@ class ExportDefaultContentForm extends FormBase {
         ->setInitMessage($this->t('Initializing.'))
         ->setProgressMessage($this->t('Completed @current of @total.'))
         ->setErrorMessage($this->t('An error has occurred.'));
-      $this->batchBuilder->addOperation([$this, 'prepareExportDirectory'], []);
+      $this->batchBuilder->addOperation([$this, 'prepareExportDirectory']);
       foreach ($entity_type_ids as $entity_type_id) {
-        $entity_ids = \Drupal::entityQuery($entity_type_id)->execute();
-
+        $entity_ids = $this->entityTypeManager->getStorage($entity_type_id)
+          ->getQuery()
+          ->accessCheck(FALSE)
+          ->execute();
         if (!empty($entity_ids_to_filter)) {
           $entity_ids = array_intersect($entity_ids, $entity_ids_to_filter);
         }
-
-        $this->batchBuilder->addOperation(
-          [$this, 'processEntities'],
-          [$entity_ids, $entity_type_id]
-        );
+        if (!empty($entity_ids)) {
+          $this->batchBuilder->addOperation(
+            [$this, 'processEntities'],
+            [$entity_ids, $entity_type_id]
+          );
+        }
       }
-
-      $this->batchBuilder->addOperation([$this, 'createArchive'], [self::DEFAULT_CONTENT_DIRECTORY]);
       $this->batchBuilder->setFinishCallback([$this, 'finished']);
       batch_set($this->batchBuilder->toArray());
     }
@@ -189,25 +190,15 @@ class ExportDefaultContentForm extends FormBase {
 
   /**
    * Prepare directory.
-   *
-   * @param string $directory_uri
-   *   Source directory URI.
    */
-  private function prepareDirectory(string $directory_uri): void {
+  private function prepareDirectory(string $directory_uri) {
     $this->fileSystem->prepareDirectory($directory_uri, FileSystemInterface::CREATE_DIRECTORY);
   }
 
   /**
    * Processor for batch operations.
-   *
-   * @param array $entity_ids
-   *   List of exported entities IDs.
-   * @param string $entity_type_id
-   *   Entity type ID.
-   * @param array $context
-   *   The batch context.
    */
-  public function processEntities(array $entity_ids, string $entity_type_id, array &$context): void {
+  public function processEntities(array $entity_ids, string $entity_type_id, array &$context) {
     // Elements per operation.
     $limit = 20;
 
@@ -264,25 +255,16 @@ class ExportDefaultContentForm extends FormBase {
 
   /**
    * Export entity.
-   *
-   * @param int $entity_id
-   *   Exported entity ID.
-   * @param string $entity_type_id
-   *   Entity type ID.
-   * @param string $directory
-   *   A folder to write the exported entities into.
-   *
-   * @return array
-   *   The serialized entities keyed by entity type and UUID.
    */
-  public function processItem(int $entity_id, string $entity_type_id, string $directory): array {
-    return $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $directory);
+  public function processItem(int $entity_id, string $entity_type_id, $directory) {
+    $this->defaultContentExporter->exportContentWithReferences($entity_type_id, $entity_id, $directory);
+    $this->addFolderFilesToArchive($directory);
   }
 
   /**
    * Prepare export directory.
    */
-  public function prepareExportDirectory(): void {
+  public function prepareExportDirectory() {
     $folder_uri = self::DEFAULT_CONTENT_DIRECTORY;
     $this->fileSystem->deleteRecursive($folder_uri);
     $is_prepared = $this->fileSystem->prepareDirectory($folder_uri, FileSystemInterface::CREATE_DIRECTORY);
@@ -292,21 +274,18 @@ class ExportDefaultContentForm extends FormBase {
       ]));
     }
     $this->fileSystem->chmod($folder_uri, 0775);
+
+    $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
+    $zip_directory = dirname($zip_uri);
+    $this->prepareDirectory($zip_directory);
   }
 
   /**
    * Finished callback for batch.
    *
-   * @param bool $success
-   *   Indicate that the batch API tasks were all completed successfully.
-   * @param array $results
-   *   An array of all the results that were updated in update_do_one().
-   * @param array $operations
-   *   A list of the operations that had not been completed by the batch API.
-   *
    * @noinspection PhpUnusedParameterInspection
    */
-  public function finished(bool $success, array $results, array $operations): void {
+  public function finished($success, $results, $operations) {
     $message = new TranslatableMarkup('Number of nodes exported by batch: @count, Url: <a href="@url">@url</a>', [
       '@count' => $results['processed'],
       '@url' => \Drupal::service('file_url_generator')->generateAbsoluteString(self::DEFAULT_CONTENT_ZIP_URI),
@@ -316,41 +295,24 @@ class ExportDefaultContentForm extends FormBase {
 
   /**
    * Create an archive.
-   *
-   * @param string $folder_uri
-   *   Source folder name.
-   *
-   * @return string
-   *   Exported content archive URI.
    */
-  public function createArchive(string $folder_uri): string {
-    $delete_users = \Drupal::config('default_content_extra.settings')->get('delete_users');
-
-    // Only delete users if setting is enabled.
-    if ($delete_users) {
-      // Get a user storage object, load users 0 and 1, iterate.
-      $user_storage = \Drupal::entityTypeManager()->getStorage('user');
-      $users = $user_storage->loadMultiple([0, 1]);
-
-      foreach ($users as $user) {
-        // Set delete path.
-        $path = $folder_uri . '/user/' . $user->uuid() . '.json';
-        if (file_exists($path)) {
-          unlink($path);
-        }
-      }
-    }
-
+  public function addFolderFilesToArchive(string $folder_uri): string {
     $zip_uri = self::DEFAULT_CONTENT_ZIP_URI;
-    $zip_directory = dirname($zip_uri);
-    $this->prepareDirectory($zip_directory);
     $zip_path = $this->fileSystem->realpath($zip_uri);
 
     $zip = new \ZipArchive();
-    $zip->open($zip_path, \ZipArchive::CREATE);
+    if (file_exists($zip_path)) {
+      $zip->open($zip_path);
+    }
+    else {
+      $zip->open($zip_path, \ZipArchive::CREATE);
+    }
     $files = $this->fileSystem->scanDirectory($folder_uri, '/.*/');
+    if (empty($files)) {
+      throw new FileException(sprintf('There are no entities to export: %', $folder_uri));
+    }
     foreach ($files as $file) {
-      $file_relative_path = str_replace($folder_uri . '/', '', $file->uri);
+      $file_relative_path = str_replace(self::DEFAULT_CONTENT_DIRECTORY . '/', '', $file->uri);
       $zip->addFile(
         $this->fileSystem->realpath($file->uri),
         $file_relative_path
@@ -367,7 +329,7 @@ class ExportDefaultContentForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function __wakeup(): void {
+  public function __wakeup() {
     $this->_serviceIds = [
       'fileSystem' => 'file_system',
       'defaultContentExporter' => 'default_content.exporter',

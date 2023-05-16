@@ -5,7 +5,35 @@
  * Default content UI module.
  */
 
+use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\default_content_ui\Form\ImportDefaultContentForm;
+use Drupal\default_content_ui\Service\DefaultContentManager;
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
+ *   Thrown if the entity type doesn't exist.
+ * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+ *   Thrown if the storage handler couldn't be loaded.
+ * @throws \Drupal\Core\Entity\EntityStorageException
+ *   In case of failures an exception is thrown.
+ */
+function default_content_ui_entity_presave(EntityInterface $entity): void {
+  if (!_default_content_ui_is_locked() && $entity->isNew()) {
+    /** @var \Drupal\default_content_ui\Service\DuplicateResolver $duplicate_resolver */
+    $duplicate_resolver = Drupal::service('default_content_ui.duplicate_resolver');
+    if ($entity instanceof ContentEntityBase) {
+      $duplicate_resolver->resolveDuplicates($entity);
+    }
+  }
+}
+
+function _default_content_ui_is_locked(): bool {
+  return Drupal::state()->get(ImportDefaultContentForm::LOCK_ID, FALSE) &&
+    Drupal::state()->get(DefaultContentManager::LOCK_ID, FALSE);
+}
 
 /**
  * Implements hook_file_download().
